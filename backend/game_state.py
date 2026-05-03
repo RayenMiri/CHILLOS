@@ -227,3 +227,41 @@ def apply_trade(session: "GameSession", trade: "TradeOffer") -> None:
     session.log.append(
         f"Trade complete: {giver.nickname} ↔ {receiver.nickname}"
     )
+
+
+def resolve_bankruptcy(session: "GameSession", debtor_id: str, creditor_id: str | None) -> None:
+    debtor = session.players[debtor_id]
+    debtor.is_bankrupt = True
+    for space in session.board:
+        if space.owner_id == debtor_id:
+            if creditor_id:
+                space.owner_id = creditor_id
+                creditor = session.players[creditor_id]
+                prop_str = str(space.position)
+                if prop_str not in creditor.properties:
+                    creditor.properties.append(prop_str)
+            else:
+                space.owner_id = None
+                space.houses = 0
+                space.has_hotel = False
+                space.is_mortgaged = False
+    if creditor_id:
+        creditor = session.players[creditor_id]
+        creditor.cash += max(0, debtor.cash)
+    debtor.cash = 0
+    debtor.properties.clear()
+    session.log.append(f"{debtor.nickname} has gone bankrupt!")
+
+
+def get_active_players(session: "GameSession") -> list[Player]:
+    return [p for p in session.players.values() if not p.is_bankrupt]
+
+
+def check_win_condition(session: "GameSession") -> str | None:
+    active = get_active_players(session)
+    if len(active) == 1:
+        winner = active[0]
+        session.status = "game_over"
+        session.log.append(f"{winner.nickname} wins the game!")
+        return winner.id
+    return None

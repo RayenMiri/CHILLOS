@@ -7,7 +7,7 @@ from typing import Literal
 
 from board import COLOR_GROUPS, Space, SpaceType, build_board
 from cards import Card, CardAction, build_chance_deck, build_community_chest_deck
-from game_state import AuctionState, GameSession, TradeOffer, calculate_rent, start_auction, can_build_on, can_sell_from, apply_trade
+from game_state import AuctionState, GameSession, TradeOffer, calculate_rent, start_auction, can_build_on, can_sell_from, apply_trade, resolve_bankruptcy, check_win_condition
 from player import Player
 
 # ---------------------------------------------------------------------------
@@ -42,13 +42,21 @@ def _advance_turn(session: GameSession) -> None:
 
 def _check_win(session: GameSession) -> bool:
     """Return True if the game is over; set status and log winner."""
-    active = [p for p in session.players.values() if not p.is_bankrupt]
-    if len(active) == 1:
-        session.status = "game_over"
+    winner_id = check_win_condition(session)
+    if winner_id:
         session.phase = "game_over"
-        _log(session, f"{active[0].nickname} wins the game!")
         return True
     return False
+
+
+def _check_bankruptcy(session: GameSession, player_id: str, creditor_id: str | None) -> bool:
+    """If player has negative cash, resolve bankruptcy. Returns True if bankrupt."""
+    player = session.players.get(player_id)
+    if not player or player.cash >= 0:
+        return False
+    resolve_bankruptcy(session, player_id, creditor_id)
+    _check_win(session)
+    return True
 
 
 def _nearest_position(current: int, targets: list[int]) -> tuple[int, bool]:
@@ -116,6 +124,7 @@ def _apply_card(session: GameSession, player: Player, card: Card) -> None:
                         session,
                         f"{player.nickname} paid ${rent} rent (10x dice) to {owner.nickname}.",
                     )
+                    _check_bankruptcy(session, player.id, owner.id)
             else:
                 _apply_space(session, player)
 
@@ -139,6 +148,7 @@ def _apply_card(session: GameSession, player: Player, card: Card) -> None:
                         session,
                         f"{player.nickname} paid ${rent} rent (2x railroad) to {owner.nickname}.",
                     )
+                    _check_bankruptcy(session, player.id, owner.id)
             else:
                 _apply_space(session, player)
 
@@ -183,11 +193,13 @@ def _apply_card(session: GameSession, player: Player, card: Card) -> None:
                 f"{player.nickname} paid ${total} for repairs "
                 f"({total_houses} houses, {total_hotels} hotels).",
             )
+            _check_bankruptcy(session, player.id, None)
 
         case CardAction.PAY_BANK:
             amount = card.amount or 0
             player.cash -= amount
             _log(session, f"{player.nickname} paid ${amount} to the bank.")
+            _check_bankruptcy(session, player.id, None)
 
         case CardAction.COLLECT_FROM_PLAYERS:
             amount = card.amount or 0
@@ -195,6 +207,7 @@ def _apply_card(session: GameSession, player: Player, card: Card) -> None:
                 if other.id != player.id and not other.is_bankrupt:
                     other.cash -= amount
                     player.cash += amount
+                    _check_bankruptcy(session, other.id, player.id)
             _log(
                 session,
                 f"{player.nickname} collected ${amount} from each other player.",
@@ -225,6 +238,7 @@ def _apply_space(session: GameSession, player: Player) -> None:
             amount: int = space.tax_amount or 0
             player.cash -= amount
             _log(session, f"{player.nickname} paid ${amount} tax on {space.name}.")
+            _check_bankruptcy(session, player.id, None)
 
         case SpaceType.CHANCE:
             if session.chance_deck:
@@ -256,6 +270,7 @@ def _apply_space(session: GameSession, player: Player) -> None:
                         f"{player.nickname} paid ${rent} rent to {owner.nickname} "
                         f"for {space.name}.",
                     )
+                    _check_bankruptcy(session, player.id, owner.id)
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +477,7 @@ def handle_jail_action(
                         session,
                         f"{player.nickname} paid $50 fine after 3 jail turns and moved to {space.name}.",
                     )
+                    _check_bankruptcy(session, player.id, None)
                     _apply_space(session, player)
                 else:
                     # No doubles — end turn, next player
@@ -686,6 +702,8 @@ def handle_respond_trade(session: GameSession, player_id: str, accept: bool) -> 
         return False, "Only the trade recipient can respond."
     if accept:
         apply_trade(session, trade)
+        _check_bankruptcy(session, trade.from_player, trade.to_player)
+        _check_bankruptcy(session, trade.to_player, trade.from_player)
     else:
         _log(session, "Trade rejected.")
     session.pending_trade = None
