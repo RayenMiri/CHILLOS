@@ -133,3 +133,60 @@ def resolve_auction(session: "GameSession") -> None:
         session.log.append(f"No bids — {space.name} remains unowned")
     session.auction = None
     session.phase = "turn_action"
+
+
+def owner_has_monopoly(session: "GameSession", group: str) -> bool:
+    """Return True if all spaces in `group` have the same non-None owner."""
+    positions = COLOR_GROUPS.get(group, [])
+    if not positions:
+        return False
+    owner = session.board[positions[0]].owner_id
+    if owner is None:
+        return False
+    return all(session.board[pos].owner_id == owner for pos in positions)
+
+
+def can_build_on(session: "GameSession", player_id: str, position: int) -> str | None:
+    """Return error string if player cannot build on space at position, else None."""
+    space = session.board[position]
+    if space.space_type != SpaceType.PROPERTY:
+        return "Can only build on color properties"
+    if space.owner_id != player_id:
+        return "You don't own this property"
+    if space.is_mortgaged:
+        return "Cannot build on mortgaged property"
+    group = space.group
+    if not group or not owner_has_monopoly(session, group):
+        return "Must own full color group to build"
+    group_positions = COLOR_GROUPS[group]
+    for pos in group_positions:
+        if session.board[pos].is_mortgaged:
+            return "Cannot build while any group property is mortgaged"
+    if space.has_hotel:
+        return "Already has a hotel"
+    # Even build rule
+    active_houses = [
+        s.houses for s in (session.board[pos] for pos in group_positions) if not s.has_hotel
+    ]
+    if active_houses and space.houses > min(active_houses):
+        return "Even build rule: build on property with fewer houses first"
+    return None
+
+
+def can_sell_from(session: "GameSession", player_id: str, position: int) -> str | None:
+    """Return error string if player cannot sell a building from space at position, else None."""
+    space = session.board[position]
+    if space.owner_id != player_id:
+        return "You don't own this property"
+    if space.houses == 0 and not space.has_hotel:
+        return "No buildings to sell"
+    group = space.group
+    if not group:
+        return "Property has no group"
+    group_positions = COLOR_GROUPS[group]
+    if space.has_hotel:
+        return None  # always allowed to sell a hotel
+    max_houses = max(session.board[pos].houses for pos in group_positions)
+    if space.houses < max_houses:
+        return "Even sell rule: sell from property with most houses first"
+    return None

@@ -7,7 +7,7 @@ from typing import Literal
 
 from board import COLOR_GROUPS, Space, SpaceType, build_board
 from cards import Card, CardAction, build_chance_deck, build_community_chest_deck
-from game_state import AuctionState, GameSession, calculate_rent, start_auction
+from game_state import AuctionState, GameSession, calculate_rent, start_auction, can_build_on, can_sell_from
 from player import Player
 
 # ---------------------------------------------------------------------------
@@ -515,6 +515,53 @@ async def _auction_timer(session_code: str, position: int, ends_at: datetime) ->
     ):
         resolve_auction(live_session)
         await wh.broadcast(session_code, {"type": "game_state", "data": live_session.model_dump(mode="json")})
+
+
+def handle_build_house(session: GameSession, player_id: str, position: int) -> tuple[bool, str]:
+    error = can_build_on(session, player_id, position)
+    if error:
+        return False, error
+    space = session.board[position]
+    player = session.players[player_id]
+    cost = space.house_cost
+    if cost is None:
+        return False, "Property has no build cost"
+    if space.houses == 4:
+        # Upgrade to hotel
+        if player.cash < cost:
+            return False, f"Need ${cost} to build a hotel"
+        player.cash -= cost
+        space.houses = 0
+        space.has_hotel = True
+        _log(session, f"{player.nickname} built a hotel on {space.name}")
+    else:
+        if player.cash < cost:
+            return False, f"Need ${cost} to build a house"
+        player.cash -= cost
+        space.houses += 1
+        _log(session, f"{player.nickname} built house #{space.houses} on {space.name}")
+    return True, ""
+
+
+def handle_sell_house(session: GameSession, player_id: str, position: int) -> tuple[bool, str]:
+    error = can_sell_from(session, player_id, position)
+    if error:
+        return False, error
+    space = session.board[position]
+    player = session.players[player_id]
+    cost = space.house_cost
+    if cost is None:
+        return False, "Property has no build cost"
+    if space.has_hotel:
+        space.has_hotel = False
+        space.houses = 4
+        player.cash += cost // 2
+        _log(session, f"{player.nickname} sold hotel on {space.name} for ${cost // 2}")
+    else:
+        space.houses -= 1
+        player.cash += cost // 2
+        _log(session, f"{player.nickname} sold a house on {space.name} for ${cost // 2}")
+    return True, ""
 
 
 def handle_auction_bid(session: GameSession, player_id: str, bid: int) -> tuple[bool, str]:

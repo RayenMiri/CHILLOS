@@ -9,6 +9,8 @@ from actions import (
     handle_jail_action,
     handle_decline_buy,
     handle_auction_bid,
+    handle_build_house,
+    handle_sell_house,
 )
 
 
@@ -64,6 +66,12 @@ async def handle_message(session_code: str, player_id: str, data: dict) -> None:
         elif msg_type == "auction_bid":
             bid = data.get("bid", 0)
             ok, err = handle_auction_bid(session, player_id, bid)
+        elif msg_type == "build_house":
+            pos = data.get("position")
+            ok, err = handle_build_house(session, player_id, pos)
+        elif msg_type == "sell_house":
+            pos = data.get("position")
+            ok, err = handle_sell_house(session, player_id, pos)
         elif msg_type == "chat":
             player = get_player(session_code, player_id)
             if player is None:
