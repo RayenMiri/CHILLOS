@@ -120,13 +120,15 @@ def resolve_auction(session: "GameSession") -> None:
     space = session.board[auction.property_position]
     if auction.highest_bidder:
         winner = session.players.get(auction.highest_bidder)
-        if winner:
+        if winner and winner.cash >= auction.highest_bid:
             winner.cash -= auction.highest_bid
             space.owner_id = winner.id
             winner.properties.append(str(auction.property_position))
             session.log.append(
                 f"{winner.nickname} won auction for {space.name} with bid ${auction.highest_bid}"
             )
+        else:
+            session.log.append(f"Auction for {space.name} — winner could not pay, property remains unowned")
     else:
         session.log.append(f"No bids — {space.name} remains unowned")
     session.auction = None

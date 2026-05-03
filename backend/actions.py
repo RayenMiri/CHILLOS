@@ -2,11 +2,12 @@
 
 import asyncio
 import random
+from datetime import datetime
 from typing import Literal
 
 from board import COLOR_GROUPS, Space, SpaceType, build_board
 from cards import Card, CardAction, build_chance_deck, build_community_chest_deck
-from game_state import AuctionState, GameSession, calculate_rent
+from game_state import AuctionState, GameSession, calculate_rent, start_auction
 from player import Player
 
 # ---------------------------------------------------------------------------
@@ -484,8 +485,7 @@ def handle_jail_action(
     return True, ""
 
 
-def handle_decline_buy(session: GameSession, player_id: str) -> tuple[bool, str]:
-    from game_state import start_auction
+async def handle_decline_buy(session: GameSession, player_id: str) -> tuple[bool, str]:
     if session.phase != "turn_action":
         return False, "Not in action phase"
     player = _get_current_player(session)
@@ -497,19 +497,24 @@ def handle_decline_buy(session: GameSession, player_id: str) -> tuple[bool, str]
     if space.owner_id is not None:
         return False, "Property already owned"
     start_auction(session, player.position)
-    asyncio.create_task(_auction_timer(session.code, player.position))
+    asyncio.create_task(_auction_timer(session.code, player.position, session.auction.ends_at))
     return True, ""
 
 
-async def _auction_timer(session_code: str, position: int) -> None:
+async def _auction_timer(session_code: str, position: int, ends_at: datetime) -> None:
     import session_manager as sm
     from game_state import resolve_auction
     import websocket_handler as wh
     await asyncio.sleep(10)
     live_session = sm.sessions.get(session_code)
-    if live_session and live_session.auction and live_session.auction.property_position == position:
+    if (
+        live_session
+        and live_session.auction
+        and live_session.auction.property_position == position
+        and live_session.auction.ends_at == ends_at
+    ):
         resolve_auction(live_session)
-        await wh.broadcast(session_code, {"type": "game_state", "data": live_session.model_dump()})
+        await wh.broadcast(session_code, {"type": "game_state", "data": live_session.model_dump(mode="json")})
 
 
 def handle_auction_bid(session: GameSession, player_id: str, bid: int) -> tuple[bool, str]:

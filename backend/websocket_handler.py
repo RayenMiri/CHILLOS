@@ -60,7 +60,7 @@ async def handle_message(session_code: str, player_id: str, data: dict) -> None:
         elif msg_type == "jail_roll":
             ok, err = handle_jail_action(session, player_id, "roll")
         elif msg_type == "decline_buy":
-            ok, err = handle_decline_buy(session, player_id)
+            ok, err = await handle_decline_buy(session, player_id)
         elif msg_type == "auction_bid":
             bid = data.get("bid", 0)
             ok, err = handle_auction_bid(session, player_id, bid)
