@@ -583,3 +583,42 @@ def handle_auction_bid(session: GameSession, player_id: str, bid: int) -> tuple[
     session.auction.highest_bidder = player_id
     session.log.append(f"{player.nickname} bid ${bid} in auction")
     return True, ""
+
+
+def handle_mortgage(session: GameSession, player_id: str, position: int) -> tuple[bool, str]:
+    if session.status != "started":
+        return False, "Game is not in progress."
+    space = session.board[position]
+    if space.owner_id != player_id:
+        return False, "You don't own this property."
+    if space.is_mortgaged:
+        return False, "Already mortgaged."
+    if space.houses > 0 or space.has_hotel:
+        return False, "Must sell all buildings before mortgaging."
+    if space.mortgage_value is None:
+        return False, "Property has no mortgage value."
+    space.is_mortgaged = True
+    player = session.players[player_id]
+    player.cash += space.mortgage_value
+    _log(session, f"{player.nickname} mortgaged {space.name} for ${space.mortgage_value}")
+    return True, ""
+
+
+def handle_unmortgage(session: GameSession, player_id: str, position: int) -> tuple[bool, str]:
+    if session.status != "started":
+        return False, "Game is not in progress."
+    space = session.board[position]
+    if space.owner_id != player_id:
+        return False, "You don't own this property."
+    if not space.is_mortgaged:
+        return False, "Not mortgaged."
+    if space.mortgage_value is None:
+        return False, "Property has no mortgage value."
+    cost = int(space.mortgage_value * 1.1)
+    player = session.players[player_id]
+    if player.cash < cost:
+        return False, f"Need ${cost} to unmortgage (mortgage value + 10% interest)."
+    player.cash -= cost
+    space.is_mortgaged = False
+    _log(session, f"{player.nickname} unmortgaged {space.name} for ${cost}")
+    return True, ""
