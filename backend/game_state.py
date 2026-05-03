@@ -190,3 +190,40 @@ def can_sell_from(session: "GameSession", player_id: str, position: int) -> str 
     if space.houses < max_houses:
         return "Even sell rule: sell from property with most houses first"
     return None
+
+
+def apply_trade(session: "GameSession", trade: "TradeOffer") -> None:
+    giver = session.players[trade.from_player]
+    receiver = session.players[trade.to_player]
+
+    giver.cash -= trade.give_cash
+    receiver.cash += trade.give_cash
+    giver.cash += trade.request_cash
+    receiver.cash -= trade.request_cash
+
+    for pos in trade.give_properties:
+        space = session.board[pos]
+        space.owner_id = trade.to_player
+        prop_str = str(pos)
+        if prop_str in giver.properties:
+            giver.properties.remove(prop_str)
+        if prop_str not in receiver.properties:
+            receiver.properties.append(prop_str)
+
+    for pos in trade.request_properties:
+        space = session.board[pos]
+        space.owner_id = trade.from_player
+        prop_str = str(pos)
+        if prop_str in receiver.properties:
+            receiver.properties.remove(prop_str)
+        if prop_str not in giver.properties:
+            giver.properties.append(prop_str)
+
+    giver.get_out_of_jail_free -= trade.give_jail_cards
+    receiver.get_out_of_jail_free += trade.give_jail_cards
+    giver.get_out_of_jail_free += trade.request_jail_cards
+    receiver.get_out_of_jail_free -= trade.request_jail_cards
+
+    session.log.append(
+        f"Trade complete: {giver.nickname} ↔ {receiver.nickname}"
+    )

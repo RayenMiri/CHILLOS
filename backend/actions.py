@@ -7,7 +7,7 @@ from typing import Literal
 
 from board import COLOR_GROUPS, Space, SpaceType, build_board
 from cards import Card, CardAction, build_chance_deck, build_community_chest_deck
-from game_state import AuctionState, GameSession, calculate_rent, start_auction, can_build_on, can_sell_from
+from game_state import AuctionState, GameSession, TradeOffer, calculate_rent, start_auction, can_build_on, can_sell_from, apply_trade
 from player import Player
 
 # ---------------------------------------------------------------------------
@@ -621,4 +621,73 @@ def handle_unmortgage(session: GameSession, player_id: str, position: int) -> tu
     player.cash -= cost
     space.is_mortgaged = False
     _log(session, f"{player.nickname} unmortgaged {space.name} for ${cost}")
+    return True, ""
+
+
+def handle_propose_trade(session: GameSession, player_id: str, trade_data: dict) -> tuple[bool, str]:
+    if session.status != "started":
+        return False, "Game is not in progress."
+    if session.phase not in ("turn_action", "turn_roll"):
+        return False, "Cannot trade during auction or non-action phase."
+    if session.pending_trade is not None:
+        return False, "A trade is already pending."
+    to_player = trade_data.get("to_player")
+    if not to_player or to_player not in session.players:
+        return False, "Invalid trade partner."
+    if to_player == player_id:
+        return False, "Cannot trade with yourself."
+
+    giver = session.players[player_id]
+    give_cash = trade_data.get("give_cash", 0)
+    give_props = trade_data.get("give_properties", [])
+    give_jail = trade_data.get("give_jail_cards", 0)
+    req_cash = trade_data.get("request_cash", 0)
+    req_props = trade_data.get("request_properties", [])
+    req_jail = trade_data.get("request_jail_cards", 0)
+
+    if not isinstance(give_cash, int) or give_cash < 0:
+        return False, "give_cash must be a non-negative integer."
+    if not isinstance(req_cash, int) or req_cash < 0:
+        return False, "request_cash must be a non-negative integer."
+    if giver.cash < give_cash:
+        return False, "Insufficient cash for trade offer."
+    for pos in give_props:
+        if str(pos) not in giver.properties:
+            return False, f"You don't own property at position {pos}."
+    if giver.get_out_of_jail_free < give_jail:
+        return False, "Not enough Get Out of Jail Free cards to offer."
+    receiver = session.players[to_player]
+    for pos in req_props:
+        if str(pos) not in receiver.properties:
+            return False, f"Partner doesn't own property at position {pos}."
+
+    session.pending_trade = TradeOffer(
+        from_player=player_id,
+        to_player=to_player,
+        give_properties=give_props,
+        give_cash=give_cash,
+        give_jail_cards=give_jail,
+        request_properties=req_props,
+        request_cash=req_cash,
+        request_jail_cards=req_jail,
+    )
+    session.phase = "trading"
+    _log(session, f"{giver.nickname} proposed a trade to {receiver.nickname}")
+    return True, ""
+
+
+def handle_respond_trade(session: GameSession, player_id: str, accept: bool) -> tuple[bool, str]:
+    if session.status != "started":
+        return False, "Game is not in progress."
+    if session.phase != "trading" or not session.pending_trade:
+        return False, "No pending trade."
+    trade = session.pending_trade
+    if player_id != trade.to_player:
+        return False, "Only the trade recipient can respond."
+    if accept:
+        apply_trade(session, trade)
+    else:
+        _log(session, "Trade rejected.")
+    session.pending_trade = None
+    session.phase = "turn_action"
     return True, ""

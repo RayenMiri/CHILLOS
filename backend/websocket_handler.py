@@ -13,6 +13,8 @@ from actions import (
     handle_sell_house,
     handle_mortgage,
     handle_unmortgage,
+    handle_propose_trade,
+    handle_respond_trade,
 )
 
 
@@ -92,6 +94,12 @@ async def handle_message(session_code: str, player_id: str, data: dict) -> None:
                 await send_error(session_code, player_id, "Invalid or missing position.")
                 return
             ok, err = handle_unmortgage(session, player_id, pos)
+        elif msg_type == "propose_trade":
+            trade_data = data.get("trade", {})
+            ok, err = handle_propose_trade(session, player_id, trade_data)
+        elif msg_type == "respond_trade":
+            accept = bool(data.get("accept", False))
+            ok, err = handle_respond_trade(session, player_id, accept)
         elif msg_type == "chat":
             player = get_player(session_code, player_id)
             if player is None:
