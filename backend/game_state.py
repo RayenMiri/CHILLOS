@@ -1,6 +1,6 @@
 """Core data models for a Monopoly-style game session."""
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from pydantic import BaseModel
 
@@ -101,3 +101,33 @@ def calculate_rent(session: GameSession, space: Space, dice_sum: int) -> int:
         return space.rent[0] if space.rent else 0
 
     return 0
+
+
+def start_auction(session: "GameSession", position: int) -> None:
+    session.auction = AuctionState(
+        property_position=position,
+        ends_at=datetime.now(timezone.utc) + timedelta(seconds=10),
+    )
+    session.phase = "auction"
+    space = session.board[position]
+    session.log.append(f"Auction started for {space.name}!")
+
+
+def resolve_auction(session: "GameSession") -> None:
+    auction = session.auction
+    if not auction:
+        return
+    space = session.board[auction.property_position]
+    if auction.highest_bidder:
+        winner = session.players.get(auction.highest_bidder)
+        if winner:
+            winner.cash -= auction.highest_bid
+            space.owner_id = winner.id
+            winner.properties.append(str(auction.property_position))
+            session.log.append(
+                f"{winner.nickname} won auction for {space.name} with bid ${auction.highest_bid}"
+            )
+    else:
+        session.log.append(f"No bids — {space.name} remains unowned")
+    session.auction = None
+    session.phase = "turn_action"

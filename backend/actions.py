@@ -1,5 +1,6 @@
 """Action handlers for a Monopoly-style game. Pure business logic, no FastAPI imports."""
 
+import asyncio
 import random
 from typing import Literal
 
@@ -480,4 +481,49 @@ def handle_jail_action(
         case _:
             return False, f"Unknown jail action: {action}"
 
+    return True, ""
+
+
+def handle_decline_buy(session: GameSession, player_id: str) -> tuple[bool, str]:
+    from game_state import start_auction
+    if session.phase != "turn_action":
+        return False, "Not in action phase"
+    player = _get_current_player(session)
+    if player.id != player_id:
+        return False, "Not your turn"
+    space = session.board[player.position]
+    if space.space_type not in BUYABLE_TYPES:
+        return False, "Nothing to auction here"
+    if space.owner_id is not None:
+        return False, "Property already owned"
+    start_auction(session, player.position)
+    asyncio.create_task(_auction_timer(session.code, player.position))
+    return True, ""
+
+
+async def _auction_timer(session_code: str, position: int) -> None:
+    import session_manager as sm
+    from game_state import resolve_auction
+    import websocket_handler as wh
+    await asyncio.sleep(10)
+    live_session = sm.sessions.get(session_code)
+    if live_session and live_session.auction and live_session.auction.property_position == position:
+        resolve_auction(live_session)
+        await wh.broadcast(session_code, {"type": "game_state", "data": live_session.model_dump()})
+
+
+def handle_auction_bid(session: GameSession, player_id: str, bid: int) -> tuple[bool, str]:
+    if session.phase != "auction" or not session.auction:
+        return False, "No active auction"
+    player = session.players.get(player_id)
+    if not player or player.is_bankrupt:
+        return False, "Invalid player"
+    if not isinstance(bid, int) or bid <= session.auction.highest_bid:
+        return False, f"Bid must be higher than current highest (${session.auction.highest_bid})"
+    if player.cash < bid:
+        return False, "Insufficient funds"
+    session.auction.bids[player_id] = bid
+    session.auction.highest_bid = bid
+    session.auction.highest_bidder = player_id
+    session.log.append(f"{player.nickname} bid ${bid} in auction")
     return True, ""

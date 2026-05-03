@@ -7,6 +7,8 @@ from actions import (
     handle_buy_property,
     handle_end_turn,
     handle_jail_action,
+    handle_decline_buy,
+    handle_auction_bid,
 )
 
 
@@ -57,6 +59,11 @@ async def handle_message(session_code: str, player_id: str, data: dict) -> None:
             ok, err = handle_jail_action(session, player_id, "pay")
         elif msg_type == "jail_roll":
             ok, err = handle_jail_action(session, player_id, "roll")
+        elif msg_type == "decline_buy":
+            ok, err = handle_decline_buy(session, player_id)
+        elif msg_type == "auction_bid":
+            bid = data.get("bid", 0)
+            ok, err = handle_auction_bid(session, player_id, bid)
         elif msg_type == "chat":
             player = get_player(session_code, player_id)
             if player is None:
