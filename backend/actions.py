@@ -518,6 +518,8 @@ async def _auction_timer(session_code: str, position: int, ends_at: datetime) ->
 
 
 def handle_build_house(session: GameSession, player_id: str, position: int) -> tuple[bool, str]:
+    if session.status != "started":
+        return False, "Game is not in progress."
     error = can_build_on(session, player_id, position)
     if error:
         return False, error
@@ -544,6 +546,8 @@ def handle_build_house(session: GameSession, player_id: str, position: int) -> t
 
 
 def handle_sell_house(session: GameSession, player_id: str, position: int) -> tuple[bool, str]:
+    if session.status != "started":
+        return False, "Game is not in progress."
     error = can_sell_from(session, player_id, position)
     if error:
         return False, error

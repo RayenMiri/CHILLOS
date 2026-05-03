@@ -68,9 +68,15 @@ async def handle_message(session_code: str, player_id: str, data: dict) -> None:
             ok, err = handle_auction_bid(session, player_id, bid)
         elif msg_type == "build_house":
             pos = data.get("position")
+            if not isinstance(pos, int) or not (0 <= pos <= 39):
+                await send_error(session_code, player_id, "Invalid or missing position.")
+                return
             ok, err = handle_build_house(session, player_id, pos)
         elif msg_type == "sell_house":
             pos = data.get("position")
+            if not isinstance(pos, int) or not (0 <= pos <= 39):
+                await send_error(session_code, player_id, "Invalid or missing position.")
+                return
             ok, err = handle_sell_house(session, player_id, pos)
         elif msg_type == "chat":
             player = get_player(session_code, player_id)
@@ -98,7 +104,7 @@ async def handle_message(session_code: str, player_id: str, data: dict) -> None:
         await send_error(session_code, player_id, err)
         return
 
-    await broadcast(session_code, {"type": "game_state", "data": session.model_dump()})
+    await broadcast(session_code, {"type": "game_state", "data": session.model_dump(mode="json")})
 
 
 async def on_connect(session_code: str, player_id: str, websocket: WebSocket) -> None:
@@ -119,7 +125,7 @@ async def on_connect(session_code: str, player_id: str, websocket: WebSocket) ->
     session = get_session(session_code)
     if session is not None:
         try:
-            await websocket.send_json({"type": "game_state", "data": session.model_dump()})
+            await websocket.send_json({"type": "game_state", "data": session.model_dump(mode="json")})
         except Exception:
             pass
 
